@@ -227,4 +227,15 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     if (commit_serialize(&c, &raw, &raw_len) != 0) {
         fprintf(stderr, "error: failed to serialize commit\n");
         return -1;
+    }
+
+    // Step 6: Write commit object to the store
+    ObjectID commit_id;
+    int rc = object_write(OBJ_COMMIT, raw, raw_len, &commit_id);
+    free(raw);
+    if (rc != 0) {
+        fprintf(stderr, "error: failed to write commit object\n");
+        return -1;
+    }
+
 }
