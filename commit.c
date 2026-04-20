@@ -205,4 +205,15 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
     Commit c;
     memset(&c, 0, sizeof(c));
 
+    c.tree = tree_id;
+    c.has_parent = 0;
+
+    ObjectID parent_id;
+    if (head_read(&parent_id) == 0) {
+        c.parent = parent_id;
+        c.has_parent = 1;
+    }
+
+    // Step 3: Fill author and timestamp
+    snprintf(c.author, sizeof(c.author), "%s", pes_author());
 }
