@@ -216,4 +216,15 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
 
     // Step 3: Fill author and timestamp
     snprintf(c.author, sizeof(c.author), "%s", pes_author());
+    c.timestamp = (uint64_t)time(NULL);
+
+    // Step 4: Fill commit message
+    snprintf(c.message, sizeof(c.message), "%s", message);
+
+    // Step 5: Serialize the commit to text format
+    void *raw;
+    size_t raw_len;
+    if (commit_serialize(&c, &raw, &raw_len) != 0) {
+        fprintf(stderr, "error: failed to serialize commit\n");
+        return -1;
 }
