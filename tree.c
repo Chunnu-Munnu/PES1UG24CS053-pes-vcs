@@ -148,4 +148,50 @@ static int write_tree_level(const IndexEntry *entries, int count,
         // Check if rel contains a '/' — it means it's inside a subdirectory
         const char *slash = strchr(rel, '/');
         if (!slash) {
+            // Direct file at this level — add as blob entry
+            if (tree.count >= MAX_TREE_ENTRIES) { i++; continue; }
+            TreeEntry *te = &tree.entries[tree.count++];
+            strncpy(te->name, rel, sizeof(te->name) - 1);
+            te->name[sizeof(te->name) - 1] = '\0';
+            te->mode = entries[i].mode;
+            te->hash = entries[i].hash;
+            i++;
+        } else {
+            // Get the subdirectory name (first component of rel)
+            char subdir[256];
+            size_t subdir_len = (size_t)(slash - rel);
+            if (subdir_len >= sizeof(subdir)) { i++; continue; }
+            memcpy(subdir, rel, subdir_len);
+            subdir[subdir_len] = '\0';
+
+            // Build the new prefix for recursion
+            char new_prefix[512];
+            if (prefix && prefix[0] != '\0') {
+                snprintf(new_prefix, sizeof(new_prefix), "%s/%s", prefix, subdir);
+            } else {
+                snprintf(new_prefix, sizeof(new_prefix), "%s", subdir);
+            }
+
+            // Recursively write the subtree
+            ObjectID sub_id;
+            if (write_tree_level(entries, count, new_prefix, &sub_id) != 0)
+                return -1;
+
+            // Add as a tree entry at this level
+            if (tree.count < MAX_TREE_ENTRIES) {
+                TreeEntry *te = &tree.entries[tree.count++];
+                strncpy(te->name, subdir, sizeof(te->name) - 1);
+                te->name[sizeof(te->name) - 1] = '\0';
+                te->mode = MODE_DIR;
+                te->hash = sub_id;
+            }
+
+            // Skip ALL entries that belong to this subdirectory
+            while (i < count) {
+                const char *p2 = entries[i].path;
+                const char *r2 = p2;
+                if (prefix && prefix[0] != '\0') {
+                    size_t plen = strlen(prefix);
+                    if (strncmp(p2, prefix, plen) == 0 && p2[plen] == '/')
+                        r2 = p2 + plen + 1;
 }
