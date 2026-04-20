@@ -169,4 +169,55 @@ int index_load(Index *index) {
     fclose(f);
     return 0;
 }
+
+// Helper comparator for qsort — sort index entries alphabetically by path
+static int compare_index_entries(const void *a, const void *b) {
+    return strcmp(((const IndexEntry *)a)->path, ((const IndexEntry *)b)->path);
+}
+
+// Save the index to .pes/index atomically.
+//
+// HINTS - Useful functions and syscalls:
+//   - qsort                            : sorting the entries array by path
+//   - fopen (with "w"), fprintf        : writing to the temporary file
+//   - hash_to_hex                      : converting ObjectID for text output
+//   - fflush, fileno, fsync, fclose    : flushing userspace buffers and syncing to disk
+//   - rename                           : atomically moving the temp file over the old index
+//
+// Returns 0 on success, -1 on error.
+int index_save(const Index *index) {
+    // Sort a mutable copy by path
+    Index sorted = *index;
+    qsort(sorted.entries, (size_t)sorted.count, sizeof(IndexEntry), compare_index_entries);
+
+    const char *tmp_path = INDEX_FILE ".tmp";
+    FILE *f = fopen(tmp_path, "w");
+    if (!f) return -1;
+
+    for (int i = 0; i < sorted.count; i++) {
+        const IndexEntry *e = &sorted.entries[i];
+        char hex[HASH_HEX_SIZE + 1];
+        hash_to_hex(&e->hash, hex);
+        fprintf(f, "%o %s %lu %u %s\n",
+                e->mode, hex,
+                (unsigned long)e->mtime_sec,
+                (unsigned int)e->size,
+                e->path);
+    }
+
+    if (fflush(f) != 0) { fclose(f); return -1; }
+    if (fsync(fileno(f)) != 0) { fclose(f); return -1; }
+    fclose(f);
+
+    if (rename(tmp_path, INDEX_FILE) != 0) return -1;
+    return 0;
+}
+
+// Stage a file for the next commit.
+//
+// HINTS - Useful functions and syscalls:
+//   - fopen, fread, fclose             : reading the target file's contents
+//   - object_write                     : saving the contents as OBJ_BLOB
+//   - stat / lstat                     : getting file metadata (size, mtime, mode)
+//   - index_find                       : checking if the file is already staged
 }
