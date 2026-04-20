@@ -194,4 +194,51 @@ static int write_tree_level(const IndexEntry *entries, int count,
                     size_t plen = strlen(prefix);
                     if (strncmp(p2, prefix, plen) == 0 && p2[plen] == '/')
                         r2 = p2 + plen + 1;
+                }
+                if (strncmp(r2, subdir, subdir_len) == 0 &&
+                    (r2[subdir_len] == '/' || r2[subdir_len] == '\0'))
+                    i++;
+                else
+                    break;
+            }
+        }
+    }
+
+    // Serialize and write this tree level
+    void *tdata;
+    size_t tlen;
+    if (tree_serialize(&tree, &tdata, &tlen) != 0) return -1;
+    int rc = object_write(OBJ_TREE, tdata, tlen, id_out);
+    free(tdata);
+    return rc;
+}
+
+// Build a tree hierarchy from the current index and write all tree
+// objects to the object store.
+//
+// HINTS - Useful functions and concepts for this phase:
+//   - index_load      : load the staged files into memory
+//   - strchr          : find the first '/' in a path to separate directories from files
+//   - strncmp         : compare prefixes to group files belonging to the same subdirectory
+//   - Recursion       : you will likely want to create a recursive helper function
+//                       (e.g., `write_tree_level(entries, count, depth)`) to handle nested dirs.
+//   - tree_serialize  : convert your populated Tree struct into a binary buffer
+//   - object_write    : save that binary buffer to the store as OBJ_TREE
+//
+// Returns 0 on success, -1 on error.
+int tree_from_index(ObjectID *id_out) {
+    Index idx;
+    if (index_load(&idx) != 0) return -1;
+    if (idx.count == 0) {
+        // Create an empty tree
+        Tree empty;
+        empty.count = 0;
+        void *tdata;
+        size_t tlen;
+        if (tree_serialize(&empty, &tdata, &tlen) != 0) return -1;
+        int rc = object_write(OBJ_TREE, tdata, tlen, id_out);
+        free(tdata);
+        return rc;
+    }
+    return write_tree_level(idx.entries, idx.count, NULL, id_out);
 }
