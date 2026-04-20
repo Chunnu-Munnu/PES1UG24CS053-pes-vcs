@@ -102,4 +102,50 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
     Tree sorted_tree = *tree;
     qsort(sorted_tree.entries, sorted_tree.count, sizeof(TreeEntry), compare_tree_entries);
 
+    size_t offset = 0;
+    for (int i = 0; i < sorted_tree.count; i++) {
+        const TreeEntry *entry = &sorted_tree.entries[i];
+        
+        // Write mode and name (%o writes octal correctly for Git standards)
+        int written = sprintf((char *)buffer + offset, "%o %s", entry->mode, entry->name);
+        offset += written + 1; // +1 to step over the null terminator written by sprintf
+        
+        // Write binary hash
+        memcpy(buffer + offset, entry->hash.hash, HASH_SIZE);
+        offset += HASH_SIZE;
+    }
+
+    *data_out = buffer;
+    *len_out = offset;
+    return 0;
+}
+
+// Recursive helper: builds a tree for entries whose paths start with `prefix/`,
+// or for the root level (prefix == NULL or "").
+// `entries` are the index entries sorted by path.
+// Returns 0 on success, -1 on error.
+static int write_tree_level(const IndexEntry *entries, int count,
+                             const char *prefix, ObjectID *id_out) {
+    Tree tree;
+    tree.count = 0;
+
+    int i = 0;
+    while (i < count) {
+        const char *path = entries[i].path;
+
+        // Strip the prefix from this path
+        const char *rel = path;
+        if (prefix && prefix[0] != '\0') {
+            size_t plen = strlen(prefix);
+            if (strncmp(path, prefix, plen) == 0 && path[plen] == '/') {
+                rel = path + plen + 1;
+            } else {
+                i++;
+                continue;
+            }
+        }
+
+        // Check if rel contains a '/' — it means it's inside a subdirectory
+        const char *slash = strchr(rel, '/');
+        if (!slash) {
 }
