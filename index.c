@@ -118,4 +118,55 @@ int index_status(const Index *index) {
                 }
             }
         }
+        closedir(dir);
+    }
+    if (untracked_count == 0) printf("  (nothing to show)\n");
+    printf("\n");
+
+    return 0;
+}
+
+// ─── TODO: Implement these ───────────────────────────────────────────────────
+
+// Load the index from .pes/index.
+//
+// HINTS - Useful functions:
+//   - fopen (with "r"), fscanf, fclose : reading the text file line by line
+//   - hex_to_hash                      : converting the parsed string to ObjectID
+//
+// Returns 0 on success, -1 on error.
+int index_load(Index *index) {
+    index->count = 0;
+
+    FILE *f = fopen(INDEX_FILE, "r");
+    if (!f) {
+        // File doesn't exist yet — empty index, not an error
+        return 0;
+    }
+
+    char hex[HASH_HEX_SIZE + 1];
+    unsigned int mode;
+    unsigned long mtime;
+    unsigned int size;
+    char path[512];
+
+    while (index->count < MAX_INDEX_ENTRIES &&
+           fscanf(f, "%o %64s %lu %u %511s\n",
+                  &mode, hex, &mtime, &size, path) == 5) {
+        IndexEntry *e = &index->entries[index->count];
+        e->mode = mode;
+        if (hex_to_hash(hex, &e->hash) != 0) {
+            fclose(f);
+            return -1;
+        }
+        e->mtime_sec = (uint64_t)mtime;
+        e->size      = (uint32_t)size;
+        strncpy(e->path, path, sizeof(e->path) - 1);
+        e->path[sizeof(e->path) - 1] = '\0';
+        index->count++;
+    }
+
+    fclose(f);
+    return 0;
+}
 }
