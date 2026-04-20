@@ -160,4 +160,37 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         close(fd);
         unlink(tmp_path);
         return -1;
+    }
+    close(fd);
+
+    // Step 8: Rename temp → final path (atomic on POSIX)
+    if (rename(tmp_path, obj_path) != 0) {
+        unlink(tmp_path);
+        return -1;
+    }
+
+    // Step 9: fsync the shard directory to persist the rename
+    int dir_fd = open(shard_dir, O_RDONLY);
+    if (dir_fd >= 0) {
+        fsync(dir_fd);
+        close(dir_fd);
+    }
+
+    // Step 10: Return the computed hash
+    if (id_out) *id_out = id;
+    return 0;
+}
+
+// Read an object from the store.
+//
+// Steps:
+//   1. Build the file path from the hash using object_path()
+//   2. Open and read the entire file
+//   3. Parse the header to extract the type string and size
+//   4. Verify integrity: recompute the SHA-256 of the file contents
+//      and compare to the expected hash (from *id). Return -1 if mismatch.
+//   5. Set *type_out to the parsed ObjectType
+//   6. Allocate a buffer, copy the data portion (after the \0), set *data_out and *len_out
+//
+// HINTS - Useful syscalls and functions for this phase:
 }
