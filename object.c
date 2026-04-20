@@ -226,4 +226,37 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
         return -1;
     }
     fclose(f);
+
+    // Step 3: Verify integrity — recompute hash of on-disk bytes
+    ObjectID computed;
+    compute_hash(buf, (size_t)file_size, &computed);
+    if (memcmp(computed.hash, id->hash, HASH_SIZE) != 0) {
+        free(buf);
+        return -1;
+    }
+
+    // Step 4: Find the '\0' separating header from data
+    uint8_t *null_ptr = memchr(buf, '\0', (size_t)file_size);
+    if (!null_ptr) { free(buf); return -1; }
+
+    // Step 5: Parse type string
+    if      (strncmp((char *)buf, "blob",   4) == 0) *type_out = OBJ_BLOB;
+    else if (strncmp((char *)buf, "tree",   4) == 0) *type_out = OBJ_TREE;
+    else if (strncmp((char *)buf, "commit", 6) == 0) *type_out = OBJ_COMMIT;
+    else { free(buf); return -1; }
+
+    // Step 6: Extract data portion (after the '\0')
+    uint8_t *data_start = null_ptr + 1;
+    size_t data_len = (size_t)file_size - (size_t)(data_start - buf);
+
+    uint8_t *data_copy = malloc(data_len + 1); // +1 for safety null
+    if (!data_copy) { free(buf); return -1; }
+    memcpy(data_copy, data_start, data_len);
+    data_copy[data_len] = '\0';
+
+    *data_out = data_copy;
+    *len_out = data_len;
+
+    free(buf);
+    return 0;
 }
