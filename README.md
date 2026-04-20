@@ -19,7 +19,7 @@ sudo apt update && sudo apt install -y gcc build-essential libssl-dev
 This is a **template repository**. Do **not** fork it.
 
 1. Click **"Use this template"** → **"Create a new repository"** on GitHub
-2. Name your repository (e.g., `SRN-pes-vcs`) and set it to **public**. Replace `SRN` with your actual SRN, e.g., `PESXUG24CSYYY-pes-vcs`
+2. Name your repository (e.g., `PES1UG24CS053-pes-vcs`) and set it to **public**. 
 3. Clone this repository to your local machine and do all your lab work inside this directory.
 4.  **Important:** Remember to commit frequently as you progress. You are required to have a minimum of 5 detailed commits per phase. Refer to [Submission Requirements](#submission-requirements) for more details.
 5. Clone your new repository and start working
@@ -39,7 +39,7 @@ make clean    # Remove all build artifacts
 PES-VCS reads the author name from the `PES_AUTHOR` environment variable:
 
 ```bash
-export PES_AUTHOR="Your Name <PESXUG24CS042>"
+export PES_AUTHOR="PES1UG24CS053 <PES1UG24CS053@pes.edu>"
 ```
 
 If unset, it defaults to `"PES User <pes@localhost>"`.
@@ -374,9 +374,11 @@ The test program verifies:
 - Deduplication (same content → same hash → stored once)
 - Integrity checking (detects corrupted objects)
 
-**📸 Screenshot 1A:** Output of `./test_objects` showing all tests passing.
+**📸 Screenshot 1A:**
+![Screenshot 1A](Screenshots/1A.png)
 
-**📸 Screenshot 1B:** `find .pes/objects -type f` showing the sharded directory structure.
+**📸 Screenshot 1B:**
+![Screenshot 1B](Screenshots/1B.png)
 
 ---
 
@@ -406,9 +408,11 @@ The test program verifies:
 - Serialize → parse roundtrip preserves entries, modes, and hashes
 - Deterministic serialization (same entries in any order → identical output)
 
-**📸 Screenshot 2A:** Output of `./test_tree` showing all tests passing.
+**📸 Screenshot 2A:**
+![Screenshot 2A](Screenshots/2A.png)
 
-**📸 Screenshot 2B:** Pick a tree object from `find .pes/objects -type f` and run `xxd .pes/objects/XX/YYY... | head -20` to show the raw binary format.
+**📸 Screenshot 2B:**
+![Screenshot 2B](Screenshots/2B.png)
 
 ---
 
@@ -464,9 +468,11 @@ echo "world" > file2.txt
 cat .pes/index    # Human-readable text format
 ```
 
-**📸 Screenshot 3A:** Run `./pes init`, `./pes add file1.txt file2.txt`, `./pes status` — show the output.
+**📸 Screenshot 3A:**
+![Screenshot 3A](Screenshots/3A.png)
 
-**📸 Screenshot 3B:** `cat .pes/index` showing the text-format index with your entries.
+**📸 Screenshot 3B:**
+![Screenshot 3B](Screenshots/3B.png)
 
 ---
 
@@ -515,11 +521,17 @@ You can also run the full integration test:
 make test-integration
 ```
 
-**📸 Screenshot 4A:** Output of `./pes log` showing three commits with hashes, authors, timestamps, and messages.
+**📸 Screenshot 4A:**
+![Screenshot 4A](Screenshots/4A.png)
 
-**📸 Screenshot 4B:** `find .pes -type f | sort` showing object store growth after three commits.
+**📸 Screenshot 4B:**
+![Screenshot 4B](Screenshots/4B.png)
 
-**📸 Screenshot 4C:** `cat .pes/refs/heads/main` and `cat .pes/HEAD` showing the reference chain.
+**📸 Screenshot 4C:**
+![Screenshot 4C](Screenshots/4C.png)
+
+**📸 Final Integration:**
+![Final Integration](Screenshots/Final.png)
 
 ---
 
@@ -531,15 +543,25 @@ The following questions cover filesystem concepts beyond the implementation scop
 
 **Q5.1:** A branch in Git is just a file in `.git/refs/heads/` containing a commit hash. Creating a branch is creating a file. Given this, how would you implement `pes checkout <branch>` — what files need to change in `.pes/`, and what must happen to the working directory? What makes this operation complex?
 
+**Answer 5.1:** To implement `pes checkout <branch>`, I would first read the target branch's commit hash from `.pes/refs/heads/<branch>`. Then, I would atomically update `.pes/HEAD` to point to the new branch (e.g., `ref: refs/heads/<branch>`). Next, the working directory must be updated by retrieving the root tree hash from the target commit object and recursively traversing its trees and blobs. Files tracked in the current index but missing in the target tree would be deleted, and existing files would be overwritten with the content of the target tree's blobs. Finally, `.pes/index` must be updated to perfectly match the target tree. This is complex because we must restructure the live file system while preventing accidental deletion of untracked user files or uncommitted modifications during the transition.
+
 **Q5.2:** When switching branches, the working directory must be updated to match the target branch's tree. If the user has uncommitted changes to a tracked file, and that file differs between branches, checkout must refuse. Describe how you would detect this "dirty working directory" conflict using only the index and the object store.
 
+**Answer 5.2:** A "dirty working directory" conflict happens when local changes would be overwritten. I would detect this by first comparing file metadata (mtime, size) and content in the working directory against the current `.pes/index`. If the file is locally modified (dirty), I would then compare the current `.pes/index` entry's hash with the file's hash in the target commit's tree. If the file is both modified in the working directory AND differs between the current state and the target branch, `pes checkout` must detect the conflict and abort to protect user data.
+
 **Q5.3:** "Detached HEAD" means HEAD contains a commit hash directly instead of a branch reference. What happens if you make commits in this state? How could a user recover those commits?
+
+**Answer 5.3:** A "Detached HEAD" occurs when `.pes/HEAD` directly contains a commit hash instead of a branch reference. Commits made in this state function normally (recording the previous commit as parent and creating a new commit object), but only `.pes/HEAD` is updated. No branch pointer, like `main`, is moved forward. If the user then checks out another branch, these detached commits become "dangling" since nothing points to them. A user could recover them by finding their hash in their terminal history and explicitly creating a new branch to point at them (`pes branch recovery <hash>`).
 
 ### Garbage Collection and Space Reclamation
 
 **Q6.1:** Over time, the object store accumulates unreachable objects — blobs, trees, or commits that no branch points to (directly or transitively). Describe an algorithm to find and delete these objects. What data structure would you use to track "reachable" hashes efficiently? For a repository with 100,000 commits and 50 branches, estimate how many objects you'd need to visit.
 
+**Answer 6.1:** To find and delete unreachable objects, I would use a Mark-and-Sweep algorithm. In the Mark Phase, I would use a `HashSet` to efficiently store reachable object hashes. I would start from all "roots" (the `.pes/HEAD` and files in `.pes/refs/heads/`). I would recursively traverse their commits, associated trees, and blobs, adding every encountered hash to the `HashSet`. In the Sweep Phase, I would iterate over all files in `.pes/objects/XX/YYY`. Any object whose hash is missing from the `HashSet` would be safely deleted. For 100,000 commits and 50 branches, I would visit objects corresponding precisely to the full history size, but due to Git deduplicating exact file contents, identical blobs shared between commits would only be traversed and hashed once per unique path traversal.
+
 **Q6.2:** Why is it dangerous to run garbage collection concurrently with a commit operation? Describe a race condition where GC could delete an object that a concurrent commit is about to reference. How does Git's real GC avoid this?
+
+**Answer 6.2:** Running Garbage Collection (GC) concurrently with a commit causes a race condition. When `pes commit` creates a new tree and commit object, these objects exist in the object store but are not yet linked to a branch file because the branch reference update is the absolute final step. If GC runs at this exact moment and calculates reachability, it will consider these brand-new objects unreachable and permanently delete them. A fraction of a second later, `pes commit` updates the branch reference to point to the newly deleted commit, completely corrupting the repository. Real Git avoids this by enforcing a grace period (e.g., 2 weeks duration); `git gc` only deletes unreachable objects that are strictly older than the grace limit, insulating newly created objects from premature deletion.
 
 ---
 
@@ -600,3 +622,5 @@ The following questions cover filesystem concepts beyond the implementation scop
 - **Git Internals** (Pro Git book): https://git-scm.com/book/en/v2/Git-Internals-Plumbing-and-Porcelain
 - **Git from the inside out**: https://codewords.recurse.com/issues/two/git-from-the-inside-out
 - **The Git Parable**: https://tom.preston-werner.com/2009/05/19/the-git-parable.html
+
+---

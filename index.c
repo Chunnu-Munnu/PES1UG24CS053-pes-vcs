@@ -175,6 +175,9 @@ static int compare_index_entries(const void *a, const void *b) {
     return strcmp(((const IndexEntry *)a)->path, ((const IndexEntry *)b)->path);
 }
 
+// Define object_write prototype missing from headers
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+
 // Save the index to .pes/index atomically.
 //
 // HINTS - Useful functions and syscalls:
@@ -186,16 +189,18 @@ static int compare_index_entries(const void *a, const void *b) {
 //
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // Sort a mutable copy by path
-    Index sorted = *index;
-    qsort(sorted.entries, (size_t)sorted.count, sizeof(IndexEntry), compare_index_entries);
+    // Sort a mutable copy by path (allocated on heap to prevent stack overflow)
+    Index *sorted = malloc(sizeof(Index));
+    if (!sorted) return -1;
+    *sorted = *index;
+    qsort(sorted->entries, (size_t)sorted->count, sizeof(IndexEntry), compare_index_entries);
 
     const char *tmp_path = INDEX_FILE ".tmp";
     FILE *f = fopen(tmp_path, "w");
-    if (!f) return -1;
+    if (!f) { free(sorted); return -1; }
 
-    for (int i = 0; i < sorted.count; i++) {
-        const IndexEntry *e = &sorted.entries[i];
+    for (int i = 0; i < sorted->count; i++) {
+        const IndexEntry *e = &sorted->entries[i];
         char hex[HASH_HEX_SIZE + 1];
         hash_to_hex(&e->hash, hex);
         fprintf(f, "%o %s %lu %u %s\n",
@@ -205,9 +210,10 @@ int index_save(const Index *index) {
                 e->path);
     }
 
-    if (fflush(f) != 0) { fclose(f); return -1; }
-    if (fsync(fileno(f)) != 0) { fclose(f); return -1; }
+    if (fflush(f) != 0) { fclose(f); free(sorted); return -1; }
+    if (fsync(fileno(f)) != 0) { fclose(f); free(sorted); return -1; }
     fclose(f);
+    free(sorted);
 
     if (rename(tmp_path, INDEX_FILE) != 0) return -1;
     return 0;
